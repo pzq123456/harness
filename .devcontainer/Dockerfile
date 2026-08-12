@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir \
     loguru \
     opencv-python-headless \
     ultralytics \
-    pyyaml \
+    pyyaml
