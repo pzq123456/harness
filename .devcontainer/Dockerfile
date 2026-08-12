@@ -3,7 +3,8 @@ FROM pytorch/pytorch:2.10.0-cuda13.0-cudnn9-devel
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive \
-    TORCH_CUDA_ARCH_LIST="12.0"
+    TORCH_CUDA_ARCH_LIST="12.0" \
+    PIP_BREAK_SYSTEM_PACKAGES=1
 
 WORKDIR /workspace
 
