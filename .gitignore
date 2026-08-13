@@ -12,6 +12,7 @@ wheels/
 tmp
 dataset
 dataset.tar.gz
+*.tar.gz
 
 *.pt
 runs
