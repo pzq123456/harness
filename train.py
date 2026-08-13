@@ -1,10 +1,10 @@
 # yoloCons/train.py
 from datetime import datetime
 from ultralytics import YOLO
-from ultralytics.utils import SETTINGS
+# from ultralytics.utils import SETTINGS
 
 def main():
-    SETTINGS["tensorboard"] = True
+    # SETTINGS["tensorboard"] = True
     
     current_time = datetime.now().strftime("%Y%m%d_%H%M")
     run_name = f"yolo26m_harness_{current_time}"
@@ -16,7 +16,7 @@ def main():
         epochs=500,
         patience=50,
         imgsz=640,
-        batch=64,
+        batch=128,
         device=-1,
         name=run_name,
         workers=8,
