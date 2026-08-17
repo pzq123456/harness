@@ -6,8 +6,8 @@
 - 方案: yolo26n(COCO) 对全部图重新检测人框; 人框与 harness 框 IoU>0.1 重叠 -> harness, 否则 -> no_harness
 - 补充: datasetv1 中人工标注的 no_harness(1) 框本身即全身人框, 并入人框候选池
 - 去重: 检测框与人工框 IoU>0.5 视为同一人, 保留人工框
-- 划分: 继承 datasetv1 的 train/valid/test, 无跨集泄漏
-- 裁剪: 8% 边距 -> 边界 clamp -> 方形补边(114) -> 320x320 (消除正负尺寸差异, 保持比例不变形)
+- 划分: 继承 datasetv1 的 train/valid/test 但合并为 train/test (不需要验证集, val 指 test)
+- 裁剪: 8% 边距 -> 边界 clamp, 保留原始宽高比与分辨率 (不做方形填充/统一尺寸)
 - 过滤: 裁剪后 min(w,h) < 32px 的远景小人丢弃
 """
 import glob
@@ -15,7 +15,6 @@ import os
 import shutil
 
 import cv2
-import numpy as np
 from ultralytics import YOLO
 
 SRC = r"C:/Users/admin/Desktop/work/harness/dataset/datasetv1"
@@ -26,9 +25,7 @@ CONF = 0.25
 IOU_TH = 0.1        # 人框与 harness 框 IoU 超过此值 -> 正样本
 DUP_IOU = 0.5       # 检测框与人工框 IoU 超过此值视为同一人
 MARGIN = 0.08       # 框外扩边距 (相对宽高的 8%)
-SIZE = 320          # 输出方形尺寸
 MIN_PX = 32         # 裁剪后最小边长, 更小的丢弃
-PAD_VAL = 114       # 补边颜色 (YOLO 惯例灰)
 
 
 def iou(b1, b2):
@@ -53,26 +50,8 @@ def load_boxes(lab):
     return out
 
 
-def square_pad_crop(img, x1, y1, x2, y2, size=SIZE, pad_val=PAD_VAL):
-    """裁剪 -> 方形补边 -> resize, 返回 BGR 图"""
-    crop = img[y1:y2, x1:x2]
-    h, w = crop.shape[:2]
-    if max(h, w) > size * 4:  # 超采样: 大图先降采样再补边, 省内存
-        scale = size * 4 / max(h, w)
-        crop = cv2.resize(crop, (max(1, int(w * scale)), max(1, int(h * scale))),
-                          interpolation=cv2.INTER_AREA)
-        h, w = crop.shape[:2]
-    if h == w:
-        return cv2.resize(crop, (size, size), interpolation=cv2.INTER_LINEAR)
-    side = max(h, w)
-    canvas = np.full((side, side, 3), pad_val, dtype=np.uint8)
-    y0, x0 = (side - h) // 2, (side - w) // 2
-    canvas[y0:y0 + h, x0:x0 + w] = crop
-    return cv2.resize(canvas, (size, size), interpolation=cv2.INTER_LINEAR)
-
-
 def crop_one(img, W, H, b):
-    """按归一化框裁剪 + 边距 + 方形补边, 太小返回 None"""
+    """按归一化框裁剪 + 边距, 保留原始宽高比与分辨率, 太小返回 None"""
     xc, yc, w, h = b
     mw, mh = w * MARGIN, h * MARGIN
     x1 = max(0, int((xc - w / 2 - mw) * W))
@@ -81,7 +60,7 @@ def crop_one(img, W, H, b):
     y2 = min(H, int((yc + h / 2 + mh) * H))
     if x2 - x1 < MIN_PX or y2 - y1 < MIN_PX:
         return None
-    return square_pad_crop(img, x1, y1, x2, y2)
+    return img[y1:y2, x1:x2]
 
 
 def save_one(out, split, cls, im, b, crop, counts):
@@ -95,13 +74,15 @@ def save_one(out, split, cls, im, b, crop, counts):
 
 
 def main():
-    # 1. 收集每张图: 路径, split, harness(0) 框, 人工 no_harness(1) 人框
-    images = []  # (abs_img, split, harness_boxes, manual_person_boxes)
-    for split in ("train", "valid", "test"):
+    # 1. 收集每张图: 路径, 输出 split, harness(0) 框, 人工 no_harness(1) 人框
+    #    datasetv1 的 train/valid 合并为 train, test 保持 (不需要验证集)
+    SPLIT_MAP = {"train": "train", "valid": "train", "test": "test"}
+    images = []  # (abs_img, out_split, harness_boxes, manual_person_boxes)
+    for split, out_split in SPLIT_MAP.items():
         for im in glob.glob(f"{SRC}/{split}/images/*.jpg"):
             lab = im.replace("\\", "/").replace("/images/", "/labels/").rsplit(".", 1)[0] + ".txt"
             boxes = load_boxes(lab)
-            images.append((im, split,
+            images.append((im, out_split,
                            [b[1:] for b in boxes if b[0] == 0],
                            [b[1:] for b in boxes if b[0] == 1]))
     n_harness_img = sum(1 for _, _, h, _ in images if h)
@@ -122,7 +103,7 @@ def main():
     if os.path.exists(OUT):
         shutil.rmtree(OUT)
     os.makedirs(OUT)
-    counts = {s: {"harness": 0, "no_harness": 0} for s in ("train", "valid", "test")}
+    counts = {s: {"harness": 0, "no_harness": 0} for s in ("train", "test")}
     stats = {"det_pos": 0, "det_neg": 0, "man_pos": 0, "man_neg": 0, "dup_drop": 0}
 
     for (im, split, harness, manual), r in zip(images, all_res):
@@ -149,9 +130,9 @@ def main():
             save_one(OUT, split, cls, im, b, crop, counts)
             stats[f"{src}_{'pos' if is_pos else 'neg'}"] += 1
 
-    # 4. data.yaml (分类格式)
+    # 4. data.yaml (分类格式, 无验证集, val 指向 test)
     with open(f"{OUT}/data.yaml", "w") as fh:
-        fh.write("train: train\nval: valid\ntest: test\n\n")
+        fh.write("train: train\nval: test\n\n")
         fh.write("nc: 2\nnames: ['harness', 'no_harness']\n")
 
     # 5. 统计
