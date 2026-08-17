@@ -35,7 +35,9 @@ class RTSPStreamer:
 def main():
     script_dir = Path(__file__).parent
     # VEST分类模型路径 (cls模型)
-    model_path = script_dir / "runs" / "vest" / "best.pt"
+    # model_path = script_dir / "runs" / "vest" / "best.pt"
+    model_path = script_dir / "runs" / "classify" / "yolo26m_cls_harness_20260817_0547" / "weights" /"best.pt"
+
     
     if not model_path.exists():
         print(f"错误：找不到模型文件 {model_path}")
@@ -46,7 +48,7 @@ def main():
     base_model = YOLO("yolo26n.pt", task="detect")
     vest_model = YOLO(str(model_path), task="classify")  # 改为classify任务
     
-    rtsp_url = "rtsp://118.140.234.166:8554/dahua1000352"
+    rtsp_url = "rtsp://118.140.234.166:8554/dahua1000330"
     # rtsp_url = "0"  # 使用摄像头测试
     streamer = RTSPStreamer(rtsp_url)
     time.sleep(1)
